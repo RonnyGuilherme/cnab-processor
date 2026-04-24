@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: cnab-processor
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/cnab_db
+    username: ${DB_USERNAME:cnab_user}
+    password: ${DB_PASSWORD:cnab_pass}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  batch:
+    job:
+      enabled: false        # Jobs via API — não dispara no startup
+    jdbc:
+      initialize-schema: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+
+logging:
+  level:
+    com.seuportfolio.cnab_processor: DEBUG
+    org.springframework.batch: INFO
+    org.flywaydb: INFO
