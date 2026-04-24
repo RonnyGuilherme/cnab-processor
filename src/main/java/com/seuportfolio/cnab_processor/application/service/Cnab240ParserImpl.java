@@ -1,11 +1,14 @@
 package com.seuportfolio.cnab_processor.application.service;
 
+import com.seuportfolio.cnab_processor.application.service.banco.BancoStrategyFactory;
 import com.seuportfolio.cnab_processor.domain.model.CnabFile;
 import com.seuportfolio.cnab_processor.domain.model.TransactionRecord;
 import com.seuportfolio.cnab_processor.domain.model.enums.BankCode;
 import com.seuportfolio.cnab_processor.domain.model.enums.CnabType;
+import com.seuportfolio.cnab_processor.domain.service.BancoStrategy;
 import com.seuportfolio.cnab_processor.domain.service.CnabParser;
 import com.seuportfolio.cnab_processor.infrastructure.exception.CnabParsingException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -14,23 +17,16 @@ import java.util.List;
 
 import static com.seuportfolio.cnab_processor.application.service.FixedLengthExtractor.*;
 
-/**
- * Parser CNAB 240 — Manual FEBRABAN v10.7.
- *
- * Tipos de registro:
- *   0 → Header de arquivo
- *   1 → Header de lote
- *   3 → Detalhe (Segmento A, B, J...)
- *   5 → Trailer de lote
- *   9 → Trailer de arquivo
- */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class Cnab240ParserImpl implements CnabParser {
 
     private static final int    LINE_LENGTH = 240;
     private static final String DETAIL_TYPE = "3";
     private static final String SEGMENT_A   = "A";
+
+    private final BancoStrategyFactory strategyFactory;
 
     @Override
     public CnabType supportedType() {
@@ -54,6 +50,11 @@ public class Cnab240ParserImpl implements CnabParser {
         BankCode bankCode = BankCode.fromCode(extract(firstLine, 1, 3));
         CnabFile cnabFile = CnabFile.receive(originalFileName, CnabType.CNAB240, bankCode);
 
+        // Recupera strategy do banco — pode não existir para bancos não suportados
+        BancoStrategy strategy = strategyFactory.supports(bankCode)
+                ? strategyFactory.getStrategy(bankCode)
+                : null;
+
         int processed = 0;
         int rejected  = 0;
         List<String> errors = new ArrayList<>();
@@ -74,7 +75,14 @@ public class Cnab240ParserImpl implements CnabParser {
             if (DETAIL_TYPE.equals(extract(line, 8, 8))
                     && SEGMENT_A.equals(extract(line, 14, 14))) {
                 try {
-                    cnabFile.addTransaction(parseSegmentA(line, lineNumber));
+                    TransactionRecord record = parseSegmentA(line, lineNumber);
+
+                    // Aplica enriquecimentos específicos do banco, se disponível
+                    if (strategy != null) {
+                        strategy.enrich(record);
+                    }
+
+                    cnabFile.addTransaction(record);
                     processed++;
                 } catch (Exception e) {
                     log.warn("Falha ao parsear Segmento A — linha {}: {}", lineNumber, e.getMessage());
@@ -106,7 +114,7 @@ public class Cnab240ParserImpl implements CnabParser {
                 .paymentDate(extractDate(line, 94, 101))
                 .currencyType(extract(line, 102, 104))
                 .amount(extractAmount(line, 120, 134))
-                .payerDocument("")   // Segmento B — Fase 2
+                .payerDocument("")
                 .rawLine(line)
                 .build();
     }
