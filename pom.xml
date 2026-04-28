@@ -36,14 +36,24 @@
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
-
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>1.19.8</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>postgresql</artifactId>
+			<version>1.19.8</version>
+			<scope>test</scope>
+		</dependency>
 		<!-- Springdoc OpenAPI — Swagger UI -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 			<version>2.5.0</version>
 		</dependency>
-
 		<!-- H2 — banco em memória só para testes -->
 		<dependency>
 			<groupId>com.h2database</groupId>
@@ -118,18 +128,10 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.8.12</version>
-				<executions>
-					<execution>
-						<goals><goal>prepare-agent</goal></goals>
-					</execution>
-					<execution>
-						<id>report</id>
-						<phase>verify</phase>
-						<goals><goal>report</goal></goals>
-					</execution>
-					<!-- <check> entra na Fase 3, quando a base de testes estiver consolidada -->
-				</executions>
+				<version>0.8.13</version>
+				<configuration>
+					<skip>true</skip>   <!-- Java 26 não suportado ainda pelo JaCoCo 0.8.13 -->
+				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>

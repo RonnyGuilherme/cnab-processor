@@ -52,7 +52,7 @@ public class CnabFile {
     @Column(nullable = false)
     private int rejectedLines;
 
-    @OneToMany(mappedBy = "cnabFile", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "cnabFile", orphanRemoval = true)  // cascade removido
     private List<TransactionRecord> transactions = new ArrayList<>();
 
     private CnabFile(String originalFileName, CnabType cnabType, BankCode bankCode) {

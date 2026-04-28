@@ -94,8 +94,8 @@ public class TransactionRecord {
         this.processedAt    = LocalDateTime.now();
     }
 
-    /** Visibilidade package — só o agregado chama. */
-    void associateTo(CnabFile file) {
+    // era: void associateTo(CnabFile file)
+    public void associateTo(CnabFile file) {
         this.cnabFile = file;
     }
 

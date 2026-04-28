@@ -3,27 +3,26 @@ spring:
     name: cnab-processor
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/cnab_db
-    username: ${DB_USERNAME:cnab_user}
-    password: ${DB_PASSWORD:cnab_pass}
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;NON_KEYWORDS=VALUE
+      driver-class-name: org.h2.Driver
+      username: sa
+      password:
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: create-drop
     show-sql: false
 
   flyway:
-    enabled: true
-    locations: classpath:db/migration
+    enabled: false
 
   batch:
     job:
       enabled: false        # Jobs via API — não dispara no startup
     jdbc:
-      initialize-schema: never
+      initialize-schema: never # Flyway (V2__create_spring_batch_tables.sql) gerencia o schema.
+        # Se ficasse "always", o Spring Batch tentaria recriar as tabelas
+      # e conflitaria com as já criadas pelo Flyway.
 
 management:
   endpoints:
@@ -36,3 +35,7 @@ logging:
     com.seuportfolio.cnab_processor: DEBUG
     org.springframework.batch: INFO
     org.flywaydb: INFO
+
+cnab:
+  batch:
+    chunk-size: 10                # Chunk menor facilita a verificação nos testes

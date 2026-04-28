@@ -18,3 +18,8 @@ spring:
       enabled: false
     jdbc:
       initialize-schema: always   # Cria as tabelas do Spring Batch no H2
+
+  # no application-test.yml (ou temporariamente no teste)
+  logging:
+    level:
+      com.seuportfolio.cnab_processor: DEBUG
