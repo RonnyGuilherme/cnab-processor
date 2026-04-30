@@ -2,16 +2,25 @@ spring:
   application:
     name: cnab-processor
 
+
   datasource:
     url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;NON_KEYWORDS=VALUE
       driver-class-name: org.h2.Driver
       username: sa
       password:
+    hikari:
+      connection-timeout: 20000
+      maximum-pool-size: 5
 
   jpa:
     hibernate:
       ddl-auto: create-drop
     show-sql: false
+    servlet:
+      multipart:
+        max-file-size: 50MB
+        max-request-size: 52MB
+    open-in-view: false
 
   flyway:
     enabled: false
@@ -23,12 +32,25 @@ spring:
       initialize-schema: never # Flyway (V2__create_spring_batch_tables.sql) gerencia o schema.
         # Se ficasse "always", o Spring Batch tentaria recriar as tabelas
       # e conflitaria com as já criadas pelo Flyway.
+  data:
+  thymeleaf:
+    check-template-location: true
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    display-request-duration: true
 
 management:
   endpoints:
     web:
       exposure:
         include: health, info, metrics, prometheus
+    metrics:
+      tags:
+        application: cnab-processor
 
 logging:
   level:
@@ -38,4 +60,6 @@ logging:
 
 cnab:
   batch:
-    chunk-size: 10                # Chunk menor facilita a verificação nos testes
+    chunk-size: 100                # Chunk menor facilita a verificação nos testes
+    upload:
+      temp-dir: ${java.io.tmpdir}/cnab-processor

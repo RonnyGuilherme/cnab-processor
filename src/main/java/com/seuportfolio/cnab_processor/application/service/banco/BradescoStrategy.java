@@ -10,12 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-/**
- * Regras específicas do Bradesco (código 237).
- * Particularidades:
- * - Agência: 4 dígitos + DV pelo Módulo 11 FEBRABAN (resto < 2 → DV = 0)
- * - Conta:   7 dígitos + DV pelo Módulo 10
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -47,10 +41,23 @@ public class BradescoStrategy implements BancoStrategy {
 
     @Override
     public void enrich(TransactionRecord record) {
-        // Bradesco: conta sempre com 7 dígitos, padding à esquerda com zeros
-        String padded = String.format("%07d", Long.parseLong(
-                record.getBeneficiaryAccount().replaceAll("\\D", "")
-        ));
-        log.debug("Bradesco — conta normalizada: {} → {}", record.getBeneficiaryAccount(), padded);
+        // Null-safe: campos podem vir vazios do parser
+        String rawAgency = record.getBeneficiaryAgency() != null
+                ? record.getBeneficiaryAgency() : "";
+        String normalizedAgency = String.format("%4s", rawAgency.replaceAll("\\D", ""))
+                .replace(' ', '0');
+        record.setBeneficiaryAgency(normalizedAgency);
+        log.debug("Bradesco — agência normalizada: {}", normalizedAgency);
+
+        String rawAccount = record.getBeneficiaryAccount() != null
+                ? record.getBeneficiaryAccount() : "";
+        String normalizedAccount = String.format("%07d",
+                rawAccount.isBlank() ? 0L : Long.parseLong(rawAccount.replaceAll("\\D", "")));
+        record.setBeneficiaryAccount(normalizedAccount);
+        log.debug("Bradesco — conta normalizada: {}", normalizedAccount);
+        // No final do enrich()
+        if (!validateBankDetails(normalizedAgency, normalizedAccount, "", "")) {
+            record.reject("Bradesco — DV inválido para agência/conta.");
+        }
+        }
     }
-}

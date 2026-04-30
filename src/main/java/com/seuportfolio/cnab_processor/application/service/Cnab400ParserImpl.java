@@ -15,7 +15,6 @@ import static com.seuportfolio.cnab_processor.application.service.FixedLengthExt
 
 /**
  * Parser CNAB 400 — Manual FEBRABAN v018.
- *
  * Tipos de registro:
  *   0 → Header de arquivo
  *   1 → Detalhe (transação)
@@ -25,7 +24,7 @@ import static com.seuportfolio.cnab_processor.application.service.FixedLengthExt
 @Component
 public class Cnab400ParserImpl implements CnabParser {
 
-    private static final int    LINE_LENGTH   = 400;
+    private static final int LINE_LENGTH = 400;
     private static final String DETAIL_RECORD = "1";
 
     @Override
@@ -49,11 +48,11 @@ public class Cnab400ParserImpl implements CnabParser {
         CnabFile cnabFile = CnabFile.receive(originalFileName, CnabType.CNAB400, bankCode);
 
         int processed = 0;
-        int rejected  = 0;
+        int rejected = 0;
 
         for (int i = 0; i < lines.size(); i++) {
-            int    lineNumber = i + 1;
-            String line       = lines.get(i);
+            int lineNumber = i + 1;
+            String line = lines.get(i);
 
             if (line.length() != LINE_LENGTH) {
                 log.warn("Linha {} com tamanho inválido: {} (esperado {})",
@@ -83,6 +82,12 @@ public class Cnab400ParserImpl implements CnabParser {
     }
 
     private TransactionRecord parseDetail(String line, int lineNumber) {
+        // Extrai o código da moeda das posições 43-46 (padrão FEBRABAN CNAB 400)
+        String currency = extract(line, 43, 46).trim();
+        if (currency.isBlank()) {
+            currency = "BRL";
+        }
+
         return TransactionRecord.builder()
                 .lineNumber(lineNumber)
                 .payerDocument(extract(line, 3, 16))
@@ -92,7 +97,7 @@ public class Cnab400ParserImpl implements CnabParser {
                 .documentNumber(extract(line, 117, 126))
                 .paymentDate(extractDate(line, 147, 154))
                 .amount(extractAmount(line, 127, 139))
-                .currencyType("BRL")
+                .currencyType(currency)   // ← agora variável extraída
                 .rawLine(line)
                 .build();
     }

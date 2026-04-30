@@ -21,4 +21,7 @@ public interface TransactionRecordRepository extends JpaRepository<TransactionRe
     long countByCnabFileIdAndStatus(UUID cnabFileId, TransactionStatus status);
 
     List<TransactionRecord> findByPaymentDateBetween(LocalDate start, LocalDate end);
+
+    Page<TransactionRecord> findByStatus(TransactionStatus status, Pageable pageable);
+
 }

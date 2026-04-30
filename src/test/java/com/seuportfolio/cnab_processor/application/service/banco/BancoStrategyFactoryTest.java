@@ -62,6 +62,7 @@ class BancoStrategyFactoryTest {
     void deveLancarExcecaoParaBancoNaoSuportado() {
         assertThatThrownBy(() -> factory.getStrategy(BankCode.SANTANDER))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("SANTANDER");
+                .hasMessageContaining("Nenhuma strategy para o banco: 033")
+                .hasMessageContaining("Suportados:");
     }
 }

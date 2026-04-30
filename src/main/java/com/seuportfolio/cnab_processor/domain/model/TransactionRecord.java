@@ -16,6 +16,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "transaction_records")
 @Getter
+@Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @ToString
 public class TransactionRecord {

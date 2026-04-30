@@ -44,9 +44,11 @@ public class BancoStrategyFactory {
     public BancoStrategy getStrategy(BankCode bankCode) {
         return Optional.ofNullable(strategies.get(bankCode))
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "Nenhuma strategy registrada para o banco: %s. Disponíveis: %s"
-                                .formatted(bankCode, strategies.keySet())
-                ));
+                        "Nenhuma strategy para o banco: " + bankCode.getCode()
+                                + ". Suportados: " + strategies.keySet().stream()
+                                .map(BankCode::getCode)
+                                .sorted()
+                                .collect(Collectors.joining(", "))));
     }
 
     /**

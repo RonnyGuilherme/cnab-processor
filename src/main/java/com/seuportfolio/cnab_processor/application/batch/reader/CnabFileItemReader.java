@@ -5,8 +5,10 @@ import com.seuportfolio.cnab_processor.application.service.CnabParserFactory;
 import com.seuportfolio.cnab_processor.domain.model.CnabFile;
 import com.seuportfolio.cnab_processor.domain.model.TransactionRecord;
 import com.seuportfolio.cnab_processor.domain.model.enums.CnabType;
+import com.seuportfolio.cnab_processor.domain.model.enums.TransactionStatus;
 import com.seuportfolio.cnab_processor.domain.service.CnabParser;
 import com.seuportfolio.cnab_processor.infrastructure.persistence.CnabFileRepository;
+import com.seuportfolio.cnab_processor.infrastructure.persistence.TransactionRecordRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.ExitStatus;
@@ -57,6 +59,7 @@ public class CnabFileItemReader implements ItemReader<TransactionRecord> {
 
     private final CnabParserFactory  parserFactory;
     private final CnabFileRepository cnabFileRepository;
+    private final TransactionRecordRepository transactionRecordRepository;
 
     private Iterator<TransactionRecord> iterator;
     private CnabFile persistedCnabFile;
@@ -111,14 +114,17 @@ public class CnabFileItemReader implements ItemReader<TransactionRecord> {
     @AfterStep
     public ExitStatus afterStep(StepExecution stepExecution) {
         if (persistedCnabFile != null) {
-            long processed = stepExecution.getWriteCount();
-            long rejected  = stepExecution.getSkipCount() + stepExecution.getReadSkipCount();
+            // writeCount inclui PROCESSED + REJECTED (ambos são salvos pelo writer)
+            long written = stepExecution.getWriteCount();
+            // Contar rejeitados diretamente do banco — skipCount só conta exceções de skip
+            long rejected = transactionRecordRepository.countByCnabFileIdAndStatus(
+                    persistedCnabFile.getId(), TransactionStatus.REJECTED);
+            long processed = written - rejected;
 
             persistedCnabFile.registerProcessingResult((int) processed, (int) rejected);
             cnabFileRepository.save(persistedCnabFile);
-
-            log.info("CnabFileItemReader.afterStep — processados: {}, rejeitados: {}",
-                    processed, rejected);
+            log.info("afterStep — escritos: {}, processados: {}, rejeitados: {}",
+                    written, processed, rejected);
         }
         return ExitStatus.COMPLETED;
     }

@@ -11,10 +11,12 @@ import org.springframework.stereotype.Component;
 
 /**
  * Regras específicas do Banco do Brasil (código 001).
- * Particularidades:
- * - Agência: 4 dígitos + DV pelo Módulo 11 variante BB (resto < 2 → DV = 1)
- * - Conta:   8 dígitos + DV pelo Módulo 11 variante BB
- * - Convênio: 6 dígitos sem DV
+ *
+ * <p>Particularidades:</p>
+ * <ul>
+ *   <li>Agência: 4 dígitos + DV (Módulo 11 FEBRABAN)</li>
+ *   <li>Conta:   12 dígitos + DV (Módulo 11 FEBRABAN)</li>
+ * </ul>
  */
 @Slf4j
 @Component
@@ -46,12 +48,25 @@ public class BancoDoBrasilStrategy implements BancoStrategy {
 
     @Override
     public void enrich(TransactionRecord record) {
-        // BB: normaliza agência para 4 dígitos com zeros à esquerda
-        String normalized = record.getBeneficiaryAgency()
-                .replaceAll("\\D", "")
-                .formatted("%4s")
+        // ── null-safe e normalização da agência ──
+        String rawAgency = record.getBeneficiaryAgency() != null
+                ? record.getBeneficiaryAgency() : "";
+        String normalizedAgency = String.format("%4s", rawAgency.replaceAll("\\D", ""))
                 .replace(' ', '0');
+        record.setBeneficiaryAgency(normalizedAgency);
+        log.debug("BB — agência normalizada: {}", normalizedAgency);
 
-        log.debug("BB — agência normalizada: {} → {}", record.getBeneficiaryAgency(), normalized);
+        // ── null-safe e normalização da conta ──
+        String rawAccount = record.getBeneficiaryAccount() != null
+                ? record.getBeneficiaryAccount() : "";
+        String normalizedAccount = String.format("%12s", rawAccount.replaceAll("\\D", ""))
+                .replace(' ', '0');
+        record.setBeneficiaryAccount(normalizedAccount);
+        log.debug("BB — conta normalizada: {}", normalizedAccount);
+
+        // ── Validação de DV ──
+        if (!validateBankDetails(normalizedAgency, normalizedAccount, "", "")) {
+            record.reject("BB — dígito verificador inválido para agência/conta.");
+        }
     }
 }

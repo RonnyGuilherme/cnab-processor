@@ -2,6 +2,7 @@ package com.seuportfolio.cnab_processor.domain.model;
 
 import com.seuportfolio.cnab_processor.domain.model.enums.BankCode;
 import com.seuportfolio.cnab_processor.domain.model.enums.CnabType;
+import com.seuportfolio.cnab_processor.domain.model.enums.TransactionStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -37,6 +38,10 @@ public class CnabFile {
     @Column(nullable = false, length = 20)
     private BankCode bankCode;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private TransactionStatus status;
+
     @Column(nullable = false)
     private LocalDateTime receivedAt;
 
@@ -61,6 +66,7 @@ public class CnabFile {
         this.bankCode = bankCode;
         this.receivedAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
+        this.status = TransactionStatus.PROCESSED;
     }
 
     /** Factory method — garante invariantes na criação. */
