@@ -2,12 +2,11 @@ spring:
   application:
     name: cnab-processor
 
-
   datasource:
     url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;NON_KEYWORDS=VALUE
-      driver-class-name: org.h2.Driver
-      username: sa
-      password:
+    # driver-class-name: org.h2.Driver   ← REMOVA esta linha
+    username: sa
+    password:
     hikari:
       connection-timeout: 20000
       maximum-pool-size: 5
@@ -16,23 +15,22 @@ spring:
     hibernate:
       ddl-auto: create-drop
     show-sql: false
-    servlet:
-      multipart:
-        max-file-size: 50MB
-        max-request-size: 52MB
-    open-in-view: false
+    open-in-view: false          # agora dentro de jpa, corretamente
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 52MB
 
   flyway:
     enabled: false
 
   batch:
     job:
-      enabled: false        # Jobs via API — não dispara no startup
+      enabled: false            # Jobs via API — não dispara no startup
     jdbc:
-      initialize-schema: never # Flyway (V2__create_spring_batch_tables.sql) gerencia o schema.
-        # Se ficasse "always", o Spring Batch tentaria recriar as tabelas
-      # e conflitaria com as já criadas pelo Flyway.
-  data:
+      initialize-schema: never  # Flyway gerencia o schema
+
   thymeleaf:
     check-template-location: true
 
@@ -48,9 +46,9 @@ management:
     web:
       exposure:
         include: health, info, metrics, prometheus
-    metrics:
-      tags:
-        application: cnab-processor
+  metrics:                      # ← agora irmão de endpoints (mesmo nível)
+    tags:
+      application: cnab-processor
 
 logging:
   level:
@@ -60,6 +58,6 @@ logging:
 
 cnab:
   batch:
-    chunk-size: 100                # Chunk menor facilita a verificação nos testes
-    upload:
-      temp-dir: ${java.io.tmpdir}/cnab-processor
+    chunk-size: 100
+  upload:                       # ← upload é irmão de batch, não filho
+    temp-dir: ${java.io.tmpdir}/cnab-processor

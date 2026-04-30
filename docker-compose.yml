@@ -1,0 +1,82 @@
+services:
+
+  # ── Aplicação ──────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cnab-processor
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/cnab_db
+      SPRING_DATASOURCE_USERNAME: cnab
+      SPRING_DATASOURCE_PASSWORD: cnab_secret
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_BATCH_JDBC_INITIALIZE-SCHEMA: never
+      CNAB_UPLOAD_TEMP_DIR: /tmp/cnab-processor
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,metrics,prometheus
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - cnab-net
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: cnab-postgres
+    environment:
+      POSTGRES_DB: cnab_db
+      POSTGRES_USER: cnab
+      POSTGRES_PASSWORD: cnab_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cnab -d cnab_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cnab-net
+
+  # ── Prometheus ─────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: cnab-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - app
+    networks:
+      - cnab-net
+
+  # ── Grafana ────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: cnab-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - cnab-net
+
+volumes:
+  postgres-data:
+  grafana-data:
+
+networks:
+  cnab-net:
+    driver: bridge
