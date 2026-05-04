@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -15,4 +16,7 @@ public interface CnabFileRepository extends JpaRepository<CnabFile, UUID> {
     List<CnabFile> findByBankCode(BankCode bankCode);
 
     List<CnabFile> findByReceivedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    Optional<CnabFile> findByFileHash(String fileHash);
+
 }

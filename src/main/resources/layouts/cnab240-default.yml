@@ -1,0 +1,44 @@
+# Layout CNAB 240 — Padrão FEBRABAN
+# Posições: 0-indexed, end exclusivo (compatível com String.substring)
+bankCode: "default"
+version: "1.0"
+
+segments:
+  A:
+    fields:
+      bankCode:             { start: 0,   end: 3   }
+      lot:                  { start: 3,   end: 7   }
+      recordType:           { start: 7,   end: 8   }
+      recordNumber:         { start: 8,   end: 13  }
+      segment:              { start: 13,  end: 14  }
+      movementType:         { start: 14,  end: 15  }
+      movementCode:         { start: 15,  end: 17  }
+      chamberCode:          { start: 17,  end: 20  }
+      beneficiaryBank:      { start: 20,  end: 23  }
+      beneficiaryAgency:    { start: 23,  end: 28  }
+      beneficiaryAgencyDv:  { start: 28,  end: 29  }
+      beneficiaryAccount:   { start: 29,  end: 41  }
+      beneficiaryAccountDv: { start: 41,  end: 42  }
+      beneficiaryName:      { start: 43,  end: 73  }
+      documentNumber:       { start: 73,  end: 93  }
+      realDate:             { start: 93,  end: 101 }
+      currencyType:         { start: 101, end: 104 }
+      amount:               { start: 119, end: 132 }
+      paymentDate:          { start: 142, end: 150 }
+      payerDocument:        { start: 73,  end: 93  }
+
+  B:
+    fields:
+      beneficiaryAddress:   { start: 19,  end: 49  }
+      beneficiaryCity:      { start: 49,  end: 64  }
+      beneficiaryState:     { start: 64,  end: 66  }
+      beneficiaryCep:       { start: 66,  end: 74  }
+
+  J:
+    fields:
+      barCode:              { start: 17,  end: 61  }
+      assignorName:         { start: 61,  end: 91  }
+      beneficiaryName:      { start: 91,  end: 121 }
+      paymentDate:          { start: 121, end: 129 }
+      amount:               { start: 142, end: 152 }
+      documentNumber:       { start: 73,  end: 93  }

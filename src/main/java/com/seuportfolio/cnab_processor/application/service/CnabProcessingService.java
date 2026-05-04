@@ -1,6 +1,7 @@
 package com.seuportfolio.cnab_processor.application.service;
 
 import com.seuportfolio.cnab_processor.application.batch.CnabJobOrchestrator;
+import com.seuportfolio.cnab_processor.domain.model.CnabFile;
 import com.seuportfolio.cnab_processor.infrastructure.persistence.CnabFileRepository;
 import com.seuportfolio.cnab_processor.infrastructure.web.dto.UploadResponse;
 import io.micrometer.core.instrument.Counter;
@@ -21,6 +22,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -31,6 +34,9 @@ import java.util.UUID;
  * a resposta da API (o cliente recebe o resultado imediatamente). Em produção
  * com arquivos grandes, recomenda-se tornar o processamento assíncrono e oferecer
  * um endpoint de polling por status via {@code jobExecutionId}.</p>
+ *
+ * <p>A idempotência é garantida através do hash SHA-256 do conteúdo do arquivo.
+ * Caso o arquivo já tenha sido processado, a resposta é retornada sem reprocessamento.</p>
  */
 @Slf4j
 @Service
@@ -54,11 +60,31 @@ public class CnabProcessingService {
         Timer.Sample timerSample = Timer.start(meterRegistry);
 
         try {
+            // ── 1. Computar hash SHA-256 do conteúdo ─────────────────────
+            String fileHash = computeHash(file);
+
+            // ── 2. Verificar idempotência ────────────────────────────────
+            Optional<CnabFile> existing = cnabFileRepository.findByFileHash(fileHash);
+            if (existing.isPresent()) {
+                CnabFile f = existing.get();
+                log.info("Arquivo duplicado detectado (hash: {}). Retornando resultado existente.", fileHash);
+                return new UploadResponse(
+                        f.getId(),
+                        f.getOriginalFileName(),
+                        "ALREADY_PROCESSED",
+                        f.getProcessedLines(),
+                        f.getRejectedLines(),
+                        "Arquivo já processado anteriormente. ID: " + f.getId()
+                );
+            }
+
+            // ── 3. Processamento normal ──────────────────────────────────
             Path savedPath = saveToTempDir(file, originalName);
 
             JobParameters params = new JobParametersBuilder()
                     .addString(CnabJobOrchestrator.PARAM_FILE_PATH, savedPath.toString())
                     .addString(CnabJobOrchestrator.PARAM_FILE_NAME, originalName)
+                    .addString("fileHash", fileHash)
                     .addLong("timestamp", System.currentTimeMillis())
                     .toJobParameters();
 
@@ -66,7 +92,7 @@ public class CnabProcessingService {
 
             log.info("Job '{}' finalizado com status: {}", execution.getJobId(), execution.getStatus());
 
-            // Métricas
+            // Métricas de upload
             meterRegistry.counter("cnab.files.uploaded",
                     "status", execution.getStatus().name()).increment();
 
@@ -74,7 +100,7 @@ public class CnabProcessingService {
                     .getString(CnabJobOrchestrator.CTX_CNAB_FILE_ID, null);
 
             if (cnabFileId != null) {
-                return cnabFileRepository.findById(java.util.UUID.fromString(cnabFileId))
+                return cnabFileRepository.findById(UUID.fromString(cnabFileId))
                         .map(f -> {
                             meterRegistry.counter("cnab.transactions.processed")
                                     .increment(f.getProcessedLines());
@@ -90,10 +116,12 @@ public class CnabProcessingService {
                                     "Arquivo processado com sucesso."
                             );
                         })
-                        .orElse(buildErrorResponse(originalName, execution, "CnabFile não encontrado após job."));
+                        .orElse(buildErrorResponse(originalName, execution,
+                                "CnabFile não encontrado após job."));
             }
 
-            return buildErrorResponse(originalName, execution, "Job concluído sem ID de arquivo no contexto.");
+            return buildErrorResponse(originalName, execution,
+                    "Job concluído sem ID de arquivo no contexto.");
 
         } catch (Exception e) {
             log.error("Erro ao processar arquivo '{}': {}", originalName, e.getMessage(), e);
@@ -102,6 +130,27 @@ public class CnabProcessingService {
         } finally {
             timerSample.stop(meterRegistry.timer("cnab.processing.duration",
                     "file", originalName));
+        }
+    }
+
+    /**
+     * Calcula o hash SHA-256 do conteúdo do arquivo recebido.
+     *
+     * @param file arquivo enviado no upload
+     * @return representação hexadecimal do hash
+     */
+    private String computeHash(MultipartFile file) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = file.getBytes();
+            byte[] hash = digest.digest(bytes);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("Falha ao computar hash do arquivo", e);
         }
     }
 

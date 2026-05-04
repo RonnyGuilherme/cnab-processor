@@ -3,6 +3,7 @@ package com.seuportfolio.cnab_processor.application.batch.reader;
 import com.seuportfolio.cnab_processor.application.batch.CnabJobOrchestrator;
 import com.seuportfolio.cnab_processor.application.service.CnabParserFactory;
 import com.seuportfolio.cnab_processor.domain.model.CnabFile;
+import com.seuportfolio.cnab_processor.domain.model.ParseResult;
 import com.seuportfolio.cnab_processor.domain.model.TransactionRecord;
 import com.seuportfolio.cnab_processor.domain.model.enums.CnabType;
 import com.seuportfolio.cnab_processor.domain.model.enums.TransactionStatus;
@@ -15,132 +16,194 @@ import org.springframework.batch.core.ExitStatus;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.core.annotation.AfterStep;
 import org.springframework.batch.core.annotation.BeforeStep;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.ItemReader;
-import org.springframework.batch.core.configuration.annotation.StepScope;      // ← import correto
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.BufferedReader;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Iterator;
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * Lê e parseia um arquivo CNAB, retornando um {@link TransactionRecord} por chamada.
+ * ItemReader CNAB com leitura em streaming (BufferedReader linha a linha).
  *
- * <p><b>Por que {@code @StepScope}?</b><br>
- * Este reader mantém estado ({@code iterator}, {@code persistedCnabFile}).
- * Como singleton, esse estado seria compartilhado entre execuções concorrentes,
- * causando corrupção silenciosa. {@code @StepScope} garante uma instância
- * exclusiva por execução do step.</p>
+ * <p><b>Melhoria em relação à Fase 3:</b> substitui {@code Files.readAllLines()}
+ * por {@code BufferedReader} com leitura incremental, eliminando o risco de
+ * OutOfMemoryError em arquivos grandes.</p>
  *
- * <p><b>Por que apenas {@code @BeforeStep}/@{@code AfterStep} sem interface?</b><br>
- * Implementar {@code StepExecutionListener} E usar as anotações nos mesmos métodos
- * faz o Spring Batch invocá-los duas vezes. Como registramos o bean via
- * {@code .listener()}, as anotações sozinhas são suficientes.</p>
- *
- * <p><b>Nota de evolução (sugestão 4):</b><br>
- * Este reader carrega o arquivo inteiro em memória antes de iterar.
- * Para a Fase 3 (arquivos de remessa típicos: até ~50MB) é aceitável.
- * Se no futuro surgir necessidade de processar arquivos com milhões de linhas,
- * substituir por {@code FlatFileItemReader} com {@code LineMapper} personalizado
- * permitirá leitura preguiçosa linha a linha.</p>
+ * <p><b>Lookahead de 1 registro:</b> o último registro (segmento A ou J) fica
+ * em {@code pendingRecord} até que o próximo A/J ou o fim do arquivo seja
+ * encontrado. Isso permite que o segmento B enriqueça o registro A anterior
+ * antes de emiti-lo.</p>
  */
 @Slf4j
 @Component
-@StepScope   // ← nova instância por execução de step — obrigatório para readers com estado
+@StepScope
 @RequiredArgsConstructor
 public class CnabFileItemReader implements ItemReader<TransactionRecord> {
 
-    // Sem "implements StepExecutionListener" — anotações @BeforeStep/@AfterStep
-    // são suficientes quando o bean é registrado via .listener() no BatchConfiguration.
-    // Implementar a interface junto com as anotações causaria dupla invocação.
+    @Value("#{jobParameters['filePath']}")
+    private String filePath;
 
-    private final CnabParserFactory  parserFactory;
+    @Value("#{jobParameters['fileName']}")
+    private String fileName;
+
+    @Value("#{jobParameters['fileHash']}")
+    private String fileHash;
+
+    private final CnabParserFactory parserFactory;
     private final CnabFileRepository cnabFileRepository;
     private final TransactionRecordRepository transactionRecordRepository;
 
-    private Iterator<TransactionRecord> iterator;
+    private BufferedReader bufferedReader;
+    private CnabParser parser;
     private CnabFile persistedCnabFile;
+    private int lineNumber = 0;
+    private boolean eof = false;
+
+    // ── Lookahead: registro pendente aguarda possível segmento B ─────────────
+    private TransactionRecord pendingRecord = null;
 
     @BeforeStep
     public void beforeStep(StepExecution stepExecution) {
-        String filePath = stepExecution.getJobParameters().getString(CnabJobOrchestrator.PARAM_FILE_PATH);
-        String fileName = stepExecution.getJobParameters().getString(CnabJobOrchestrator.PARAM_FILE_NAME);
-
         log.info("CnabFileItemReader.beforeStep — arquivo: '{}'", fileName);
 
         try {
-            List<String> lines = normalizar(Files.readAllLines(Path.of(filePath), StandardCharsets.UTF_8));
+            Path path = Path.of(filePath);
+            bufferedReader = Files.newBufferedReader(path, StandardCharsets.UTF_8);
 
-            if (lines.isEmpty()) {
-                throw new IllegalArgumentException("Arquivo vazio ou sem linhas válidas: " + fileName);
+            // Lê e processa o BOM (Byte Order Mark), se presente
+            bufferedReader.mark(4);
+            int first = bufferedReader.read();
+            if (first == 0xFEFF) {
+                log.debug("BOM detectado e removido.");
+            } else {
+                bufferedReader.reset();
             }
 
-            CnabType   type   = CnabType.detect(lines.getFirst().length());
-            CnabParser parser = parserFactory.getParser(type);
+            // Lê a primeira linha para detectar tipo e banco (header)
+            String headerLine = bufferedReader.readLine();
+            lineNumber = 1;
 
-            CnabFile transientFile = parser.parse(lines, fileName);
+            if (headerLine == null) {
+                throw new IllegalStateException("Arquivo vazio: " + filePath);
+            }
 
-            this.persistedCnabFile = cnabFileRepository.save(
-                    CnabFile.receive(fileName, type, transientFile.getBankCode())
-            );
+            // Remove \r se presente
+            headerLine = headerLine.replace("\r", "");
 
-            List<TransactionRecord> records = transientFile.getTransactions().stream()
-                    .peek(record -> record.associateTo(this.persistedCnabFile))
-                    .collect(Collectors.toList());
+            // Detecta tipo CNAB pela largura da linha
+            CnabType cnabType = CnabType.detect(headerLine.length());
+            parser = parserFactory.getParser(cnabType);
 
-            this.iterator = records.iterator();
 
-            stepExecution.getJobExecution()
-                    .getExecutionContext()
-                    .putString(CnabJobOrchestrator.CTX_CNAB_FILE_ID, persistedCnabFile.getId().toString());
+            // Cria CnabFile a partir do header
+            CnabFile cnabFile = parser.parseHeader(headerLine, fileName);
+            cnabFile.setFileHash(fileHash);
+            persistedCnabFile = cnabFileRepository.save(cnabFile);
 
-            log.info("Reader pronto — banco: {}, tipo: {}, registros: {}",
-                    persistedCnabFile.getBankCode().getCode(), type, records.size());
+            // Expõe o ID no contexto para CnabProcessingService
+            stepExecution.getExecutionContext()
+                    .putString(CnabJobOrchestrator.CTX_CNAB_FILE_ID,
+                            persistedCnabFile.getId().toString());
 
-        } catch (Exception e) {
-            log.error("Falha ao inicializar CnabFileItemReader: {}", e.getMessage(), e);
-            throw new RuntimeException("Erro ao preparar leitura do arquivo CNAB: " + e.getMessage(), e);
+            log.info("Reader pronto — banco: {}, tipo: {}, arquivo: {}",
+                    cnabFile.getBankCode(), cnabType, fileName);
+
+        } catch (IOException e) {
+            throw new RuntimeException("Falha ao abrir arquivo CNAB: " + filePath, e);
         }
     }
 
+    /**
+     * Retorna a próxima transação do arquivo ou {@code null} quando encerrado.
+     *
+     * <p>O algoritmo de lookahead garante que segmento B sempre enriquece
+     * o segmento A anterior antes de emiti-lo.</p>
+     */
     @Override
-    public TransactionRecord read() {
-        return (iterator != null && iterator.hasNext()) ? iterator.next() : null;
+    public TransactionRecord read() throws Exception {
+        // Se já chegou ao fim, drena o último pending
+        if (eof) {
+            return drainPending();
+        }
+
+        while (true) {
+            String rawLine = bufferedReader.readLine();
+
+            if (rawLine == null) {
+                // Fim do arquivo — emite flush do parser e pending
+                eof = true;
+                ParseResult flushResult = parser.flush();
+                if (flushResult.record() != null) {
+                    // Segmento pendente no parser
+                    TransactionRecord flushed = flushResult.record();
+                    flushed.associateTo(persistedCnabFile);
+                    return flushed;
+                }
+                return drainPending();
+            }
+
+            lineNumber++;
+            String line = rawLine.replace("\r", "");
+
+            ParseResult result = parser.parseLine(line, lineNumber, persistedCnabFile);
+
+            switch (result.type()) {
+                case SEGMENT_A, SEGMENT_J -> {
+                    // Resultado é o registro anterior (pendente)
+                    TransactionRecord previous = pendingRecord;
+                    // Novo pending
+                    pendingRecord = result.record();
+
+                    if (previous != null) {
+                        return previous;
+                    }
+                    // Sem pending anterior: continua lendo
+                }
+                case SEGMENT_B -> {
+                    // Enriquecimento já aplicado diretamente no pendingRecord pelo parser
+                    // Nada a emitir
+                }
+                case SKIP -> {
+                    // Linha ignorada: continua
+                }
+            }
+        }
     }
 
     @AfterStep
     public ExitStatus afterStep(StepExecution stepExecution) {
+        // Fecha o reader
+        if (bufferedReader != null) {
+            try { bufferedReader.close(); } catch (IOException ignored) {}
+        }
+
         if (persistedCnabFile != null) {
-            // writeCount inclui PROCESSED + REJECTED (ambos são salvos pelo writer)
-            long written = stepExecution.getWriteCount();
-            // Contar rejeitados diretamente do banco — skipCount só conta exceções de skip
+            long written  = stepExecution.getWriteCount();
             long rejected = transactionRecordRepository.countByCnabFileIdAndStatus(
                     persistedCnabFile.getId(), TransactionStatus.REJECTED);
             long processed = written - rejected;
 
             persistedCnabFile.registerProcessingResult((int) processed, (int) rejected);
             cnabFileRepository.save(persistedCnabFile);
+
             log.info("afterStep — escritos: {}, processados: {}, rejeitados: {}",
                     written, processed, rejected);
         }
+
         return ExitStatus.COMPLETED;
     }
 
-    /**
-     * Correção 8 — Remove BOM UTF-8, linhas em branco e espaços à direita.
-     *
-     * <p>Arquivos CNAB gerados por sistemas Windows frequentemente incluem
-     * BOM (byte order mark) no início ou linhas em branco entre registros,
-     * causando falha no {@link CnabType#detect(int)}.</p>
-     */
-    private List<String> normalizar(List<String> lines) {
-        return lines.stream()
-                .map(l -> l.replace("\uFEFF", ""))   // remove BOM UTF-8
-                .map(l -> l.replace("\r", ""))        // remove \r do CRLF — preserva espaços significativos
-                .filter(l -> !l.isBlank())            // remove linhas totalmente em branco
-                .collect(Collectors.toList());
+    private TransactionRecord drainPending() {
+        if (pendingRecord != null) {
+            TransactionRecord result = pendingRecord;
+            pendingRecord = null;
+            return result;
+        }
+        return null;
     }
 }

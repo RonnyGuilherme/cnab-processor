@@ -61,3 +61,12 @@ cnab:
     chunk-size: 100
   upload:                       # ← upload é irmão de batch, não filho
     temp-dir: ${java.io.tmpdir}/cnab-processor
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:cnab-processor-secret-key-must-be-at-least-256-bits-long-1234}
+      expiration-ms: 86400000   # 24 horas
+    users:
+      admin-password: ${ADMIN_PASSWORD:admin123}
+      user-password: ${USER_PASSWORD:user123}

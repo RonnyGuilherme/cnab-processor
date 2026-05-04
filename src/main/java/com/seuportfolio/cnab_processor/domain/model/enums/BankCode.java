@@ -1,7 +1,14 @@
 package com.seuportfolio.cnab_processor.domain.model.enums;
 
+import lombok.Data;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+
+import java.util.Arrays;
+import java.util.Optional;
+import java.util.UUID;
+
 
 @Getter
 @RequiredArgsConstructor
@@ -16,13 +23,22 @@ public enum BankCode {
     private final String code;
     private final String name;
 
-    public static BankCode fromCode(String code) {
-        for (BankCode bank : values()) {
-            if (bank.code.equals(code)) return bank;
-        }
-        throw new IllegalArgumentException(
-                "Código de banco não suportado: '%s'. Bancos disponíveis: 001, 237, 341."
-                        .formatted(code)
-        );
+    public static Optional<BankCode> fromCode(String code) {
+        return Arrays.stream(values())
+                .filter(b -> b.getCode().equals(code))
+                .findFirst();
     }
+
+
+public class CnabFile {
+    private UUID id;
+    private String fileName;
+    private String originalFileName;
+    private CnabType cnabType;
+    private BankCode bankCode;
+    private int processedLines;
+    private int rejectedLines;
+
+}
+
 }

@@ -23,3 +23,12 @@ spring:
   logging:
     level:
       com.seuportfolio.cnab_processor: DEBUG
+
+  app:
+    security:
+      jwt:
+        secret: test-secret-key-must-be-at-least-32-chars-long
+        expiration-ms: 3600000
+      users:
+        admin-password: admin123
+        user-password: user123

@@ -26,4 +26,6 @@ public final class CnabJobOrchestrator {
     private CnabJobOrchestrator() {
         throw new UnsupportedOperationException("Classe utilitária.");
     }
+
+    public static final String PARAM_FILE_HASH = "fileHash";
 }

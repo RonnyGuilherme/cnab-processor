@@ -1,31 +1,33 @@
 package com.seuportfolio.cnab_processor.application.service;
 
 import com.seuportfolio.cnab_processor.domain.model.CnabFile;
+import com.seuportfolio.cnab_processor.domain.model.CnabLayout;
+import com.seuportfolio.cnab_processor.domain.model.ParseResult;
 import com.seuportfolio.cnab_processor.domain.model.TransactionRecord;
 import com.seuportfolio.cnab_processor.domain.model.enums.BankCode;
 import com.seuportfolio.cnab_processor.domain.model.enums.CnabType;
+import com.seuportfolio.cnab_processor.domain.model.enums.TransactionStatus;
 import com.seuportfolio.cnab_processor.domain.service.CnabParser;
 import com.seuportfolio.cnab_processor.infrastructure.exception.CnabParsingException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 
-import static com.seuportfolio.cnab_processor.application.service.FixedLengthExtractor.*;
-
-/**
- * Parser CNAB 400 — Manual FEBRABAN v018.
- * Tipos de registro:
- *   0 → Header de arquivo
- *   1 → Detalhe (transação)
- *   9 → Trailer de arquivo
- */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class Cnab400ParserImpl implements CnabParser {
 
-    private static final int LINE_LENGTH = 400;
-    private static final String DETAIL_RECORD = "1";
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("ddMMyyyy");
+    private static final int EXPECTED_LENGTH = 400;
+
+    private final CnabLayoutLoader layoutLoader;
+    private CnabLayout layout;
 
     @Override
     public CnabType supportedType() {
@@ -33,72 +35,78 @@ public class Cnab400ParserImpl implements CnabParser {
     }
 
     @Override
-    public CnabFile parse(List<String> lines, String originalFileName) {
-        log.info("Iniciando parse CNAB400 — arquivo: '{}', total de linhas: {}",
-                originalFileName, lines.size());
-
-        if (lines == null || lines.isEmpty()) {
-            throw new CnabParsingException(
-                    "Arquivo CNAB400 vazio ou nulo: '%s'".formatted(originalFileName)
-            );
+    public CnabFile parseHeader(String line, String fileName) {
+        if (line == null || line.length() < 3) {
+            throw new CnabParsingException("Header CNAB 400 inválido.");
         }
 
-        String firstLine = lines.getFirst();
-        BankCode bankCode = BankCode.fromCode(extract(firstLine, 77, 79));
-        CnabFile cnabFile = CnabFile.receive(originalFileName, CnabType.CNAB400, bankCode);
+        String bankCodeStr = line.substring(76, 79).trim();
+        BankCode bankCode = BankCode.fromCode(bankCodeStr).orElse(null);
 
-        int processed = 0;
-        int rejected = 0;
-
-        for (int i = 0; i < lines.size(); i++) {
-            int lineNumber = i + 1;
-            String line = lines.get(i);
-
-            if (line.length() != LINE_LENGTH) {
-                log.warn("Linha {} com tamanho inválido: {} (esperado {})",
-                        lineNumber, line.length(), LINE_LENGTH);
-                rejected++;
-                continue;
-            }
-
-            if (DETAIL_RECORD.equals(extract(line, 1, 1))) {
-                try {
-                    cnabFile.addTransaction(parseDetail(line, lineNumber));
-                    processed++;
-                } catch (Exception e) {
-                    log.warn("Falha ao parsear detalhe CNAB400 — linha {}: {}",
-                            lineNumber, e.getMessage());
-                    rejected++;
-                }
-            }
+        layout = layoutLoader.getLayout("cnab400", bankCodeStr);
+        if (layout == null) {
+            layout = layoutLoader.getLayout("cnab400", "default");
         }
 
-        cnabFile.registerProcessingResult(processed, rejected);
-
-        log.info("Parse CNAB400 concluído — banco: {}, processados: {}, rejeitados: {}",
-                bankCode.getCode(), processed, rejected);
-
-        return cnabFile;
+        CnabFile cnabFile = CnabFile.receive(fileName, CnabType.CNAB400, bankCode);
+        log.info("Header CNAB400 — banco: {}", bankCode);
+        return cnabFile;   // ← ESSENCIAL
     }
 
-    private TransactionRecord parseDetail(String line, int lineNumber) {
-        // Extrai o código da moeda das posições 43-46 (padrão FEBRABAN CNAB 400)
-        String currency = extract(line, 43, 46).trim();
-        if (currency.isBlank()) {
-            currency = "BRL";
+
+    @Override
+    public ParseResult parseLine(String line, int lineNumber, CnabFile cnabFile) {
+        if (line == null || line.length() != EXPECTED_LENGTH) {
+            log.warn("Linha {} com tamanho inválido: {}", lineNumber,
+                    line == null ? 0 : line.length());
+            return ParseResult.skip();
         }
 
-        return TransactionRecord.builder()
-                .lineNumber(lineNumber)
-                .payerDocument(extract(line, 3, 16))
-                .beneficiaryAgency(extract(line, 17, 20))
-                .beneficiaryAccount(extract(line, 22, 30))
-                .beneficiaryName(extract(line, 63, 76))
-                .documentNumber(extract(line, 117, 126))
-                .paymentDate(extractDate(line, 147, 154))
-                .amount(extractAmount(line, 127, 139))
-                .currencyType(currency)   // ← agora variável extraída
-                .rawLine(line)
-                .build();
+        char recordType = line.charAt(0);
+        if (recordType == '0' || recordType == '9') return ParseResult.skip();
+
+        TransactionRecord record = new TransactionRecord();
+        record.setLineNumber(lineNumber);
+        record.setRawLine(line);
+        record.setSegmentType("DETAIL");
+        record.setStatus(TransactionStatus.PENDING);
+
+        try {
+            record.setBeneficiaryAgency(layout.extract(line, "DETAIL", "beneficiaryAgency"));
+            record.setBeneficiaryAccount(layout.extract(line, "DETAIL", "beneficiaryAccount"));
+            record.setBeneficiaryName(layout.extract(line, "DETAIL", "beneficiaryName"));
+            record.setDocumentNumber(layout.extract(line, "DETAIL", "documentNumber"));
+            record.setPayerDocument(layout.extract(line, "DETAIL", "payerDocument"));
+
+            String currency = layout.extract(line, "DETAIL", "currencyType");
+            record.setCurrencyType(currency.isBlank() ? "BRL" : currency);
+
+            String amountStr = layout.extract(line, "DETAIL", "amount").replaceAll("\\D", "");
+            record.setAmount(amountStr.isBlank() ? BigDecimal.ZERO
+                    : new BigDecimal(amountStr).movePointLeft(2));
+
+            String dateStr = layout.extract(line, "DETAIL", "paymentDate");
+            record.setPaymentDate(parseDate(dateStr, lineNumber));
+
+            record.associateTo(cnabFile);
+        } catch (Exception e) {
+            log.warn("Erro ao parsear CNAB400 linha {}: {}", lineNumber, e.getMessage());
+            record.reject("Erro de parse: " + e.getMessage());
+        }
+
+        return ParseResult.ofSegmentA(record);
+    }
+
+    @Override
+    public ParseResult flush() { return ParseResult.skip(); }
+
+    private LocalDate parseDate(String dateStr, int lineNumber) {
+        if (dateStr == null || dateStr.isBlank() || dateStr.equals("00000000")) return null;
+        try {
+            return LocalDate.parse(dateStr.trim(), DATE_FMT);
+        } catch (DateTimeParseException e) {
+            log.debug("Data inválida na linha {}: '{}'", lineNumber, dateStr);
+            return null;
+        }
     }
 }

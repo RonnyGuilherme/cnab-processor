@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.springframework.security.test.context.support.WithMockUser;
 
 import java.nio.charset.StandardCharsets;
 
@@ -58,7 +59,7 @@ class CnabUploadIntegrationTest {
     private MockMvc mockMvc;
 
     @Test
-    @DisplayName("GET /api/v1/cnab/files deve retornar lista vazia no banco limpo")
+    @WithMockUser(username = "api_user", roles = "USER")
     void deveRetornarListaVaziaInicialmente() throws Exception {
         mockMvc.perform(get("/api/v1/cnab/files"))
                 .andExpect(status().isOk())
@@ -67,7 +68,7 @@ class CnabUploadIntegrationTest {
     }
 
     @Test
-    @DisplayName("POST /api/v1/cnab/upload com arquivo vazio deve retornar 400")
+    @WithMockUser(username = "api_user", roles = "USER")
     void deveRejeitarArquivoVazio() throws Exception {
         MockMultipartFile emptyFile = new MockMultipartFile(
                 "file", "vazio.rem",
@@ -80,7 +81,7 @@ class CnabUploadIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/cnab/files/{id} com ID inexistente deve retornar 404")
+    @WithMockUser(username = "api_user", roles = "USER")
     void deveRetornar404ParaIdInexistente() throws Exception {
         String fakeId = "00000000-0000-0000-0000-000000000000";
 
@@ -89,7 +90,7 @@ class CnabUploadIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/cnab/transactions deve retornar lista paginada")
+    @WithMockUser(username = "api_user", roles = "USER")
     void deveListarTransacoesPaginadas() throws Exception {
         mockMvc.perform(get("/api/v1/cnab/transactions")
                         .param("page", "0")

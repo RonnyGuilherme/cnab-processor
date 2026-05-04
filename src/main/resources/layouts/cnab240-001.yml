@@ -1,0 +1,15 @@
+# Layout CNAB 240 — Banco do Brasil (001)
+# Herda cnab240-default.yml, sobrescreve posições específicas
+bankCode: "001"
+version: "1.0"
+
+segments:
+  A:
+    fields:
+      beneficiaryAgency:    { start: 23,  end: 27  }
+      beneficiaryAgencyDv:  { start: 27,  end: 28  }
+      beneficiaryAccount:   { start: 29,  end: 42  }
+      beneficiaryAccountDv: { start: 42,  end: 43  }
+      beneficiaryName:      { start: 43,  end: 73  }
+      amount:               { start: 119, end: 132 }
+      paymentDate:          { start: 142, end: 150 }

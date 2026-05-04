@@ -57,6 +57,11 @@ public class CnabFile {
     @Column(nullable = false)
     private int rejectedLines;
 
+    /** SHA-256 do conteúdo do arquivo — usado para idempotência de upload. */
+    @Setter
+    @Column(name = "file_hash", length = 64, unique = true)
+    private String fileHash;
+
     @OneToMany(mappedBy = "cnabFile", orphanRemoval = true)  // cascade removido
     private List<TransactionRecord> transactions = new ArrayList<>();
 

@@ -17,7 +17,7 @@ import java.util.UUID;
 @Table(name = "transaction_records")
 @Getter
 @Setter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor
 @ToString
 public class TransactionRecord {
 
@@ -69,6 +69,40 @@ public class TransactionRecord {
     /** Linha original preservada para auditoria. */
     @Column(nullable = false, columnDefinition = "TEXT")
     private String rawLine;
+
+    // ── Identificação de segmento ────────────────────────────────────────────────
+
+    /** Tipo de segmento CNAB 240 que originou este registro (A, B, J, etc.) */
+    @Column(name = "segment_type", length = 1)
+    private String segmentType;
+
+// ── Segmento J — Pagamento de boleto ─────────────────────────────────────────
+
+    /** Código de barras do boleto (44 dígitos). */
+    @Column(name = "bar_code", length = 44)
+    private String barCode;
+
+    /** Nome do cedente/sacador (quem emitiu o boleto). */
+    @Column(name = "assignor_name", length = 30)
+    private String assignorName;
+
+// ── Segmento B — Dados complementares do favorecido ──────────────────────────
+
+    /** Endereço do favorecido. */
+    @Column(name = "beneficiary_address", length = 30)
+    private String beneficiaryAddress;
+
+    /** Cidade do favorecido. */
+    @Column(name = "beneficiary_city", length = 20)
+    private String beneficiaryCity;
+
+    /** UF do favorecido. */
+    @Column(name = "beneficiary_state", length = 2)
+    private String beneficiaryState;
+
+    /** CEP do favorecido. */
+    @Column(name = "beneficiary_cep", length = 8)
+    private String beneficiaryCep;
 
     @Builder
     public TransactionRecord(int lineNumber,
