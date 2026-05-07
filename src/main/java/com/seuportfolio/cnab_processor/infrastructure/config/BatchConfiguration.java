@@ -10,21 +10,24 @@ import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.batch.core.launch.support.TaskExecutorJobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * Configuração do job Spring Batch para processamento de arquivos CNAB.
- *
  * Declarada como {@code record} com {@code proxyBeanMethods = false}:
  * todas as dependências chegam via construtor — sem chamadas cruzadas
  * entre métodos {@code @Bean}, o proxy CGLIB é desnecessário.
- *
  * O {@link CnabFileItemReader} é registrado explicitamente como listener
  * do step para que seus callbacks {@code @BeforeStep} e {@code @AfterStep}
  * sejam invocados pelo Spring Batch.
@@ -65,5 +68,32 @@ public record BatchConfiguration(
                 .incrementer(new RunIdIncrementer())
                 .start(cnabProcessingStep)
                 .build();
+
+
+
+    }
+    /**
+     * Job launcher assíncrono — lança o job em thread separada e retorna
+     * imediatamente o {@link JobExecution} com status STARTING.
+     * O cliente consulta o status via {@code GET /api/v1/jobs/{executionId}}.
+     */
+    @Bean
+    public JobLauncher asyncJobLauncher(JobRepository jobRepository) {
+        TaskExecutorJobLauncher launcher = new TaskExecutorJobLauncher();
+        launcher.setJobRepository(jobRepository);
+        launcher.setTaskExecutor(new SimpleAsyncTaskExecutor("cnab-batch-"));
+        return launcher;
+    }
+
+    /**
+     * Job launcher síncrono — mantido para uso nos testes (@SpringBatchTest).
+     */
+    @Bean
+    @Primary
+    public JobLauncher syncJobLauncher(JobRepository jobRepository) {
+        TaskExecutorJobLauncher launcher = new TaskExecutorJobLauncher();
+        launcher.setJobRepository(jobRepository);
+        launcher.setTaskExecutor(new SyncTaskExecutor());
+        return launcher;
     }
 }

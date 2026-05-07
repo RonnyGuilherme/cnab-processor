@@ -57,4 +57,5 @@ class AuthControllerTest {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk());
     }
+
 }

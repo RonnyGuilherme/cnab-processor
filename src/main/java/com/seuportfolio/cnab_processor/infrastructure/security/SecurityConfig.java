@@ -26,19 +26,18 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final CustomUserDetailsService userDetailsService; // ← substitui InMemory
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // ── Adicionar estas duas linhas ────────────────────────────
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(
-                                (request, response, e) -> response.sendError(
+                                (req, res, e) -> res.sendError(
                                         HttpServletResponse.SC_UNAUTHORIZED, "Unauthorized"))
                 )
-                // ──────────────────────────────────────────────────────────
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
@@ -48,28 +47,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/**").authenticated()
                         .anyRequest().authenticated()
                 )
+                .userDetailsService(userDetailsService) // ← novo
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
-
-    @Bean
-    public UserDetailsService userDetailsService(
-            PasswordEncoder encoder,
-            @Value("${app.security.users.admin-password:admin123}") String adminPassword,
-            @Value("${app.security.users.user-password:user123}") String userPassword) {
-
-        return new InMemoryUserDetailsManager(
-                User.withUsername("admin")
-                        .password(encoder.encode(adminPassword))
-                        .roles("ADMIN")
-                        .build(),
-                User.withUsername("api_user")
-                        .password(encoder.encode(userPassword))
-                        .roles("USER")
-                        .build()
-        );
-    }
-
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -81,4 +62,5 @@ public class SecurityConfig {
             AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
+    // ← REMOVIDO: userDetailsService() bean com InMemoryUserDetailsManager
 }

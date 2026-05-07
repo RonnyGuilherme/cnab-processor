@@ -6,6 +6,7 @@ public record UploadResponse(
         UUID fileId,
         String fileName,
         String jobStatus,
+        Long jobExecutionId,
         int processedRecords,
         int rejectedRecords,
         String message
